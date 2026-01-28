@@ -1,0 +1,871 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0b0f1a" />
+  <title>居合 DUEL 2P（上下・固定お題3つ・合図1-3・MISS/SAFE）</title>
+  <style>
+    :root{
+      --bg:#0b0f1a;
+      --text:#e9f0ff;
+      --muted:#9db0d6;
+      --bad:#ff5a77;
+      --good:#49e3a3;
+      --border: 1px solid rgba(255,255,255,.10);
+      --shadow: 0 14px 40px rgba(0,0,0,.45);
+      --radius: 18px;
+    }
+    *{ box-sizing:border-box; }
+    html,body{
+      margin:0; padding:0;
+      background:var(--bg); color:var(--text);
+      font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", Segoe UI, Roboto, sans-serif;
+      height:100%;
+      overflow:hidden;
+      -webkit-user-select:none; user-select:none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    .wrap{ height:100dvh; padding:12px 12px calc(12px + env(safe-area-inset-bottom)); }
+    .arena{
+      position:relative;
+      height:100%;
+      border:var(--border);
+      border-radius:var(--radius);
+      overflow:hidden;
+      box-shadow: var(--shadow);
+      background:
+        radial-gradient(1200px 600px at 50% 10%, rgba(80,120,255,.12), transparent 55%),
+        radial-gradient(900px 600px at 20% 70%, rgba(255,120,190,.10), transparent 55%),
+        rgba(255,255,255,.03);
+    }
+
+    /* Full tap areas */
+    .zones{
+      position:absolute; inset:0;
+      display:grid;
+      grid-template-rows: 1fr 1fr;
+      z-index:3;
+    }
+    .zone{ position:relative; width:100%; height:100%; pointer-events:auto; }
+    .zone.top{ border-bottom: 1px dashed rgba(255,255,255,.18); }
+
+    /* HUD */
+    .hud{
+      position:absolute;
+      left:12px; top:12px;
+      display:flex; align-items:center; gap:10px;
+      padding:8px 10px;
+      border-radius:999px;
+      background: rgba(255,255,255,.07);
+      border: 1px solid rgba(255,255,255,.12);
+      pointer-events:none;
+      font-weight:950;
+      font-size:13px;
+      z-index:4;
+      transform-origin:center;
+    }
+    .hudTop{ transform: rotate(180deg); }
+    .hud .hp{ letter-spacing:.10em; font-variant-numeric: tabular-nums; white-space:nowrap; }
+    .hud .hp .full{ color: var(--bad); }
+    .hud .hp .empty{ color: rgba(255,255,255,.25); }
+    .hud.bottomHud{ left:auto; right:12px; top:auto; bottom:12px; }
+
+    /* Prompts (上=180°、下=普通) */
+    .prompt{
+      position:absolute;
+      left:12px; right:12px;
+      text-align:center;
+      color: rgba(255,255,255,.78);
+      font-weight:950;
+      letter-spacing:.06em;
+      text-shadow: 0 10px 30px rgba(0,0,0,.45);
+      pointer-events:none;
+      z-index:4;
+      font-size: 14px;
+      line-height:1.35;
+      transform-origin:center;
+      white-space:pre-line;
+    }
+    .zone.top .prompt{ top:74px; transform: rotate(180deg); }
+    .zone.bottom .prompt{ bottom:74px; transform:none; }
+
+    /* Badges: NEG / POS (上=180°、下=普通) */
+    .badge{
+      position:absolute;
+      left:50%;
+      top:54%;
+      transform: translate(-50%,-50%);
+      font-weight:1000;
+      font-size: clamp(52px, 14vw, 120px);
+      letter-spacing:.10em;
+      text-shadow: 0 18px 50px rgba(0,0,0,.62);
+      pointer-events:none;
+      opacity:0;
+      z-index:5;
+      transition: opacity .08s ease;
+      user-select:none;
+      white-space:nowrap;
+      transform-origin:center;
+    }
+    .badge.on{ opacity:1; }
+    .badge.neg{ color: rgba(255,90,119,.96); }  /* BAD / MISS */
+    .badge.pos{ color: rgba(73,227,163,.95); }  /* NICE / SAFE */
+    .zone.top .badge{ transform: translate(-50%,-50%) rotate(180deg); }
+    .zone.bottom .badge{ transform: translate(-50%,-50%); }
+
+    /* Center: SHAPES ONLY */
+    .centerShape{
+      position:absolute;
+      left:50%; top:50%;
+      transform: translate(-50%,-50%);
+      width:min(88vw, 560px);
+      height:min(26vh, 240px);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      pointer-events:none;
+      z-index:2;
+      filter: drop-shadow(0 18px 38px rgba(0,0,0,.55));
+    }
+    .centerShape.on{ display:flex; }
+
+    .multi{
+      width:100%;
+      height:100%;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap: clamp(10px, 3vw, 24px);
+      padding: 0 6px;
+    }
+    .item{
+      height:100%;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      flex: 1 1 0;
+      max-width: 33%;
+    }
+    .multi.n1 .item{ max-width: 62%; }
+    .multi.n2 .item{ max-width: 46%; }
+    .multi.n3 .item{ max-width: 33%; }
+    .item svg{ width:100%; height:100%; }
+
+    /* FX canvas */
+    canvas.fx{
+      position:absolute; inset:0;
+      width:100%; height:100%;
+      pointer-events:none;
+      z-index:0;
+    }
+
+    /* End overlay (taps pass through) */
+    .endOverlay{
+      position:absolute; inset:0;
+      background: rgba(0,0,0,.58);
+      backdrop-filter: blur(6px);
+      display:none;
+      z-index:6;
+      pointer-events:none;
+    }
+    .endOverlay.on{ display:block; }
+
+    .endText{
+      position:absolute;
+      left:50%;
+      transform: translateX(-50%);
+      font-weight:1000;
+      letter-spacing:.12em;
+      font-size: clamp(48px, 10vw, 110px);
+      text-shadow: 0 14px 40px rgba(0,0,0,.55);
+      opacity:.95;
+      user-select:none;
+      color: rgba(255,255,255,.90);
+      pointer-events:none;
+    }
+    .endTop{ top: 20%; }
+    .endBottom{
+      bottom: 20%;
+      transform: translateX(-50%) rotate(180deg);
+      transform-origin: center;
+    }
+    .win{ color: var(--good); }
+    .lose{ color: var(--bad); }
+
+    .endHint{
+      position:absolute;
+      left:50%; top:50%;
+      transform: translate(-50%,-50%);
+      width:min(520px, 92vw);
+      padding:14px;
+      text-align:center;
+      border-radius:18px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.08);
+      box-shadow: var(--shadow);
+      color: rgba(255,255,255,.85);
+      font-weight:900;
+      line-height:1.35;
+      pointer-events:none;
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="arena">
+
+    <canvas class="fx" id="fx"></canvas>
+
+    <!-- HUD -->
+    <div class="hud hudTop">P1(上) <span class="hp" id="hpTop"></span></div>
+    <div class="hud bottomHud">P2(下) <span class="hp" id="hpBot"></span></div>
+
+    <!-- Tap zones -->
+    <div class="zones" id="zones">
+      <div class="zone top" data-side="T">
+        <div class="prompt" id="promptTop"></div>
+        <div class="badge neg" id="negTop">BAD</div>
+        <div class="badge pos" id="posTop">NICE</div>
+      </div>
+      <div class="zone bottom" data-side="B">
+        <div class="prompt" id="promptBot"></div>
+        <div class="badge neg" id="negBot">BAD</div>
+        <div class="badge pos" id="posBot">NICE</div>
+      </div>
+    </div>
+
+    <!-- Center shapes -->
+    <div class="centerShape" id="shape"></div>
+
+    <!-- End -->
+    <div class="endOverlay" id="end">
+      <div class="endText endTop" id="endTop">WIN</div>
+      <div class="endText endBottom" id="endBottom">LOSE</div>
+      <div class="endHint">両者タップ → もう一度</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = (id)=>document.getElementById(id);
+
+  const zones = $("zones");
+  const promptTop = $("promptTop");
+  const promptBot = $("promptBot");
+
+  const hpTopEl = $("hpTop");
+  const hpBotEl = $("hpBot");
+
+  const shapeEl = $("shape");
+
+  const negTop = $("negTop");
+  const negBot = $("negBot");
+  const posTop = $("posTop");
+  const posBot = $("posBot");
+
+  const end = $("end");
+  const endTop = $("endTop");
+  const endBottom = $("endBottom");
+
+  const fx = $("fx");
+  const ctx = fx.getContext("2d");
+
+  const now = ()=>performance.now();
+  const clamp=(x,a,b)=>Math.max(a, Math.min(b, x));
+  const randi=(a,b)=>Math.floor(a + Math.random()*(b-a+1));
+  const randf=(a,b)=>a + Math.random()*(b-a);
+  const sleep=(ms)=>new Promise(r=>setTimeout(r, ms));
+
+  // ---- audio ----
+  let audioCtx = null;
+  const ensureAudio = async () => {
+    if (!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") await audioCtx.resume();
+  };
+  const cueBeep = async ()=> {
+    try{
+      await ensureAudio();
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type="triangle"; o.frequency.value=520; g.gain.value=0.045;
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(); o.stop(audioCtx.currentTime + 0.045);
+    }catch{}
+  };
+
+  // ---- FX slashes ----
+  let slashes=[];
+  function resizeFx(){
+    const r=fx.getBoundingClientRect();
+    fx.width=Math.max(1, Math.floor(r.width*devicePixelRatio));
+    fx.height=Math.max(1, Math.floor(r.height*devicePixelRatio));
+  }
+  window.addEventListener("resize", resizeFx, {passive:true});
+  resizeFx();
+
+  function addSlash(){
+    const r=fx.getBoundingClientRect();
+    const W=r.width, H=r.height;
+    slashes.push({
+      t: now(), dur: 320,
+      x: randf(0.2,0.8)*W, y: randf(0.2,0.8)*H,
+      ang: randf(-0.9,0.9),
+      len: randf(0.6,0.95)*Math.min(W,H)
+    });
+  }
+  function tickFx(){
+    const t=now();
+    ctx.clearRect(0,0,fx.width,fx.height);
+    slashes = slashes.filter(s=> t - s.t < s.dur);
+    for(const s of slashes){
+      const p=(t-s.t)/s.dur;
+      const alpha=(1-p)*0.9;
+      const w=(6+26*(1-p))*devicePixelRatio;
+
+      const cx=s.x*devicePixelRatio, cy=s.y*devicePixelRatio;
+      const len=s.len*devicePixelRatio;
+      const dx=Math.cos(s.ang)*len/2, dy=Math.sin(s.ang)*len/2;
+
+      ctx.save();
+      ctx.globalAlpha=alpha;
+      ctx.lineCap="round";
+      ctx.lineWidth=w;
+      ctx.strokeStyle="rgba(255,255,255,0.95)";
+      ctx.beginPath(); ctx.moveTo(cx-dx, cy-dy); ctx.lineTo(cx+dx, cy+dy); ctx.stroke();
+
+      ctx.globalAlpha=alpha*0.35;
+      ctx.lineWidth=w*2.0;
+      ctx.strokeStyle="rgba(255,255,255,0.22)";
+      ctx.beginPath(); ctx.moveTo(cx-dx, cy-dy); ctx.lineTo(cx+dx, cy+dy); ctx.stroke();
+      ctx.restore();
+    }
+    requestAnimationFrame(tickFx);
+  }
+  tickFx();
+
+  // ---- Data ----
+  const COLORS = [
+    {id:"red",    css:"#ff5a77"},
+    {id:"yellow", css:"#ffd166"},
+    {id:"green",  css:"#49e3a3"},
+    {id:"blue",   css:"#5aa7ff"},
+    {id:"purple", css:"#b38cff"},
+  ];
+  const SHAPES = [{id:"tri"},{id:"sq"},{id:"cir"}];
+  const DECOY_SHAPES = [{id:"chev"},{id:"rtri"},{id:"ring"},{id:"oval"},{id:"rect"},{id:"diamond"},{id:"trap"}];
+
+  function pick(arr){ return arr[randi(0, arr.length-1)]; }
+  function pickDifferent(arr, cur, key="id"){
+    if(arr.length<=1) return cur;
+    let x=cur;
+    while(x[key]===cur[key]) x=pick(arr);
+    return x;
+  }
+  function nearColor(baseCss){
+    const hex = baseCss.replace("#","");
+    const r = parseInt(hex.slice(0,2),16);
+    const g = parseInt(hex.slice(2,4),16);
+    const b = parseInt(hex.slice(4,6),16);
+    let rr=r, gg=g, bb=b;
+    if(Math.random()<0.5){
+      const k = (Math.random()<0.5) ? 1.08 : 0.92;
+      rr = clamp(Math.round(rr*k),0,255);
+      gg = clamp(Math.round(gg*k),0,255);
+      bb = clamp(Math.round(bb*k),0,255);
+    }else{
+      rr = clamp(rr + randi(-14, 14),0,255);
+      gg = clamp(gg + randi(-14, 14),0,255);
+      bb = clamp(bb + randi(-14, 14),0,255);
+    }
+    return `rgb(${rr},${gg},${bb})`;
+  }
+
+  // ---- SVG makers ----
+  const svgTriangle = (fill)=>`<svg viewBox="0 0 100 100"><polygon points="50,10 92,90 8,90" fill="${fill}"/></svg>`;
+  const svgSquare   = (fill)=>`<svg viewBox="0 0 100 100"><rect x="14" y="14" width="72" height="72" rx="10" fill="${fill}"/></svg>`;
+  const svgCircle   = (fill)=>`<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="36" fill="${fill}"/></svg>`;
+
+  const svgChevron=(fill)=>`<svg viewBox="0 0 100 100"><path d="M18 30 L50 70 L82 30" fill="none" stroke="${fill}" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const svgRightTriangle=(fill)=>`<svg viewBox="0 0 100 100"><polygon points="18,18 86,86 18,86" fill="${fill}"/></svg>`;
+  const svgRing=(fill)=>`<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="34" fill="none" stroke="${fill}" stroke-width="14"/></svg>`;
+  const svgOval=(fill)=>`<svg viewBox="0 0 100 100"><ellipse cx="50" cy="50" rx="40" ry="28" fill="${fill}"/></svg>`;
+  const svgRect=(fill)=>`<svg viewBox="0 0 100 100"><rect x="10" y="26" width="80" height="48" rx="10" fill="${fill}"/></svg>`;
+  const svgDiamond=(fill)=>`<svg viewBox="0 0 100 100"><polygon points="50,10 88,50 50,90 12,50" fill="${fill}"/></svg>`;
+  const svgTrap=(fill)=>`<svg viewBox="0 0 100 100"><polygon points="20,22 80,22 92,86 8,86" fill="${fill}"/></svg>`;
+
+  function render(shape, fill){
+    switch(shape){
+      case "tri": return svgTriangle(fill);
+      case "sq": return svgSquare(fill);
+      case "cir": return svgCircle(fill);
+      case "chev": return svgChevron(fill);
+      case "rtri": return svgRightTriangle(fill);
+      case "ring": return svgRing(fill);
+      case "oval": return svgOval(fill);
+      case "rect": return svgRect(fill);
+      case "diamond": return svgDiamond(fill);
+      case "trap": return svgTrap(fill);
+      default: return svgSquare(fill);
+    }
+  }
+
+  function showSet(items){
+    const n = items.length;
+    const html = `<div class="multi n${n}">${items.map(()=>`<div class="item"></div>`).join("")}</div>`;
+    shapeEl.innerHTML = html;
+    const nodes = shapeEl.querySelectorAll(".item");
+    items.forEach((it, idx)=>{ nodes[idx].innerHTML = render(it.shape, it.fill); });
+    shapeEl.classList.add("on");
+  }
+  function hideSet(){
+    shapeEl.innerHTML = "";
+    shapeEl.classList.remove("on");
+  }
+
+  // ---- Badges ----
+  let badgeTimer=null;
+  function clearBadges(){
+    [negTop,negBot,posTop,posBot].forEach(el=>el.classList.remove("on"));
+  }
+  function showNeg(side, text){
+    const el = (side==="T") ? negTop : negBot;
+    el.textContent = text;
+    el.classList.add("on");
+  }
+  function showPos(side, text){
+    const el = (side==="T") ? posTop : posBot;
+    el.textContent = text;
+    el.classList.add("on");
+  }
+  function flashMissSafe(loserSide){
+    const other = (loserSide==="T") ? "B" : "T";
+    clearBadges();
+    showNeg(loserSide, "MISS");
+    showPos(other, "SAFE");
+    if(badgeTimer) clearTimeout(badgeTimer);
+    badgeTimer = setTimeout(clearBadges, 560);
+  }
+  function flashNiceBad(winnerSide){
+    const loser = (winnerSide==="T") ? "B" : "T";
+    clearBadges();
+    showPos(winnerSide, "NICE");
+    showNeg(loser, "BAD");
+    if(badgeTimer) clearTimeout(badgeTimer);
+    badgeTimer = setTimeout(clearBadges, 560);
+  }
+  function flashBothBad(){
+    clearBadges();
+    showNeg("T","BAD");
+    showNeg("B","BAD");
+    if(badgeTimer) clearTimeout(badgeTimer);
+    badgeTimer = setTimeout(clearBadges, 560);
+  }
+
+  // ---- HP ----
+  const MAX_HP = 5;
+  let hpT = MAX_HP, hpB = MAX_HP;
+  function drawHp(el, hp){
+    const full = "♥".repeat(hp);
+    const empty = "♡".repeat(MAX_HP - hp);
+    el.innerHTML = `<span class="full">${full}</span><span class="empty">${empty}</span>`;
+  }
+  function paintHP(){ drawHp(hpTopEl, hpT); drawHp(hpBotEl, hpB); }
+  function damage(side){
+    if(side==="T") hpT = Math.max(0, hpT-1);
+    else hpB = Math.max(0, hpB-1);
+    paintHP();
+    if(hpT<=0) return endMatch("B");
+    if(hpB<=0) return endMatch("T");
+    return true;
+  }
+
+  // ---- game state ----
+  let token=0;
+  let state="idle"; // idle | announce | cues | resolve | punish | matchover
+  let idleAckT=false, idleAckB=false;
+  let annAckT=false, annAckB=false;
+  let rematchAckT=false, rematchAckB=false;
+
+  let targetSet=[];       // 固定お題（3つ）
+  let isSignal=false;     // 今表示中が「正解（お題のみで構成）」か
+  let tSignal=0;
+  let tapT=null, tapB=null;
+
+  let timers=[];
+  const clearTimers = ()=>{ timers.forEach(id=>clearTimeout(id)); timers=[]; };
+
+  function setPrompts(){
+  if(state==="idle"){
+    promptTop.textContent = idleAckT ? "上：OK" : "上：タップで開始";
+    promptBot.textContent = idleAckB ? "下：OK" : "下：タップで開始";
+
+  }else if(state==="announce"){
+    promptTop.textContent = annAckT ? "上：OK" : "上：お題3つを覚えて（タップ）";
+    promptBot.textContent = annAckB ? "下：OK" : "下：お題3つを覚えて（タップ）";
+
+  }else if(state==="cues"){
+    // ★ここで表示
+    promptTop.textContent = "お題の図形だけのときタップ！\n違う図形があるとダメ！！";
+    promptBot.textContent = "お題の図形だけのときタップ！\n違う図形があるとダメ！！";
+
+  }else{
+    promptTop.textContent = "";
+    promptBot.textContent = "";
+  }
+}
+
+  // ---- Target (固定お題3つ) ----
+  function newTargetSet(){
+    const items=[];
+    while(items.length<3){
+      const shape = pick(SHAPES).id;
+      const color = pick(COLORS);
+      if(items.some(it => it.shape===shape && it.color.id===color.id)) continue;
+      items.push({shape, color});
+    }
+    // 見た目の並びをシャッフル
+    for(let i=items.length-1;i>0;i--){
+      const j=randi(0,i);
+      [items[i],items[j]]=[items[j],items[i]];
+    }
+    targetSet = items;
+  }
+  function makeTargetVisual(){
+    return targetSet.map(it => ({shape: it.shape, fill: it.color.css}));
+  }
+
+  // ---- “正解”判定用：ターゲットに存在する(shape+color)か ----
+  function inTarget(shape, fillCss){
+    // fillCss は #xxxxxx or rgb(...)
+    // ターゲット側は #なので、rgb の場合は比較しない（=不一致）
+    // → フェイント用の nearColor(rgb) が確実に「不一致」になる
+    return targetSet.some(t => t.shape===shape && t.color.css===fillCss);
+  }
+
+  // ---- cue set builders ----
+  function pickSubsetFromTarget(n){
+    const pool = targetSet.slice();
+    const out=[];
+    while(out.length<n && pool.length){
+      const idx = randi(0,pool.length-1);
+      const it = pool.splice(idx,1)[0];
+      out.push({shape: it.shape, fill: it.color.css});
+    }
+    return out;
+  }
+
+  // 正解合図：1〜3個ランダムで、全部ターゲット内（=subset）
+  function makeSignalSet(n){
+    const k = clamp(n,1,3);
+    return pickSubsetFromTarget(k);
+  }
+
+  // フェイント：1〜3個。必ず「1個以上」ターゲット外を混ぜる
+  function makeFeintSet(n){
+    const k = clamp(n,1,3);
+
+    // まず 0〜k-1 個だけ “正解っぽい” を混ぜる（必ず1個以上は外す）
+    const kCorrect = (k===1) ? 0 : randi(0, k-1);
+    const out = pickSubsetFromTarget(kCorrect);
+
+    // 残りは “ターゲット外” を生成
+    while(out.length<k){
+      const basePick = (Math.random()<0.55) ? pick(targetSet) : null;
+
+      let shape, fill;
+      if(Math.random() < 0.55){
+        // 形を変える（decoy）
+        shape = pick(DECOY_SHAPES).id;
+        const c = pick(COLORS).css;
+        fill = (Math.random()<0.55) ? nearColor(c) : c;
+      }else{
+        // 形はターゲット寄せ or 基本形、色をズラす
+        shape = basePick ? basePick.shape : pick(SHAPES).id;
+        if(basePick && Math.random()<0.65){
+          // 同じ色っぽい (rgb) にして“不一致”確定
+          fill = nearColor(basePick.color.css);
+        }else{
+          // 別色（たまに近似）
+          const other = basePick ? pickDifferent(COLORS, basePick.color, "id") : pick(COLORS);
+          fill = (Math.random()<0.45) ? nearColor(other.css) : other.css;
+        }
+      }
+
+      // “完全一致”になってしまうのはNG
+      if(inTarget(shape, fill)) continue;
+
+      // 重複(同じshape+fill)は避ける
+      if(out.some(x => x.shape===shape && x.fill===fill)) continue;
+
+      out.push({shape, fill});
+    }
+
+    // 並びもそれっぽくシャッフル
+    for(let i=out.length-1;i>0;i--){
+      const j=randi(0,i);
+      [out[i],out[j]]=[out[j],out[i]];
+    }
+    return out;
+  }
+
+  // ---- timing ----
+  const randGap = ()=> randi(700, 1200);
+  const randShowFeint = ()=> randi(820, 1300);
+  const randBlank = ()=> randi(380, 820);
+  const randNoTapTimeout = ()=> randi(2400, 3400);
+
+  // ---- flow ----
+  function startAnnounce(myToken){
+    if(myToken!==token || state==="matchover") return;
+    clearTimers();
+    tapT=tapB=null;
+    isSignal=false;
+    annAckT=false; annAckB=false;
+
+    state="announce";
+    setPrompts();
+    showSet(makeTargetVisual()); // 最初に3つのお題を出す（固定）
+    clearBadges();
+  }
+
+  async function startCues(myToken){
+    if(myToken!==token || state==="matchover") return;
+
+    state="cues";
+    setPrompts();
+    hideSet();
+
+    // フェイントをもっと多く（増量）
+    const nFeint = randi(1, 6);
+    const total = nFeint + 1;
+    const idxSignal = randi(0, total-1);
+
+    for(let i=0;i<total;i++){
+      if(myToken!==token || state==="matchover" || state!=="cues") return;
+
+      await sleep(randGap());
+      if(myToken!==token || state==="matchover" || state!=="cues") return;
+
+      const n = randi(1,3);            // 合図の図形の個数は1/2/3ランダム
+      isSignal = (i===idxSignal);
+
+      const set = isSignal ? makeSignalSet(n) : makeFeintSet(n);
+      showSet(set);
+      cueBeep();
+
+      if(!isSignal){
+        await sleep(randShowFeint());
+        if(myToken!==token || state==="matchover" || state!=="cues") return;
+        hideSet();
+        await sleep(randBlank());
+        continue;
+      }
+
+      // ---- 正解合図のウィンドウ ----
+      tSignal = now();
+      tapT=null; tapB=null;
+
+      const to = setTimeout(()=>{
+        if(myToken!==token) return;
+        if(state!=="cues" || !isSignal) return;
+
+        // だれも押さなかった：両者BAD（両者ダメージ）
+        hideSet();
+        addSlash();
+        flashBothBad();
+        damage("T"); if(state==="matchover") return;
+        damage("B"); if(state==="matchover") return;
+
+        // 次の回へ（お題は固定のまま）
+        token++;
+        startCues(token);
+      }, randNoTapTimeout());
+      timers.push(to);
+
+      return; // signal表示したらここで終了（タップ待ち）
+    }
+
+    // 念のため：どこにもsignal入らなかった場合
+    token++;
+    startCues(token);
+  }
+
+  function resolveSignal(myToken){
+    const grace = 70; // 同時押し判定を少し吸収
+    const id = setTimeout(()=>{
+      if(myToken!==token || state!=="resolve") return;
+
+      const a = (tapT==null) ? null : (tapT - tSignal);
+      const b = (tapB==null) ? null : (tapB - tSignal);
+
+      hideSet();
+      addSlash();
+
+      if(a!=null && b!=null){
+        const diff = Math.abs(a-b);
+        if(diff <= 24){
+          // 同時すぎ：両者BAD（両者ダメージ）
+          flashBothBad();
+          damage("T"); if(state==="matchover") return;
+          damage("B"); if(state==="matchover") return;
+        }else{
+          // 速い方が正解：勝者NICE / 相手BAD（相手がダメージ）
+          const winner = (a<b) ? "T" : "B";
+          const loser  = (winner==="T") ? "B" : "T";
+          flashNiceBad(winner);
+          damage(loser); if(state==="matchover") return;
+        }
+      }else{
+        // 片方だけ押した：押した方が正解（勝者NICE / 相手BAD）
+        const winner = (a!=null) ? "T" : "B";
+        const loser  = (winner==="T") ? "B" : "T";
+        flashNiceBad(winner);
+        damage(loser); if(state==="matchover") return;
+      }
+
+      token++;
+      startCues(token);
+    }, grace);
+    timers.push(id);
+  }
+
+  function endMatch(winnerSide){
+    state="matchover";
+    clearTimers();
+    hideSet();
+    clearBadges();
+
+    rematchAckT=false; rematchAckB=false;
+
+    end.classList.add("on");
+    const topWin = (winnerSide==="T");
+    endTop.textContent = topWin ? "WIN" : "LOSE";
+    endBottom.textContent = topWin ? "LOSE" : "WIN";
+    endTop.className = "endText endTop " + (topWin ? "win" : "lose");
+    endBottom.className = "endText endBottom " + (topWin ? "lose" : "win");
+    setPrompts();
+  }
+
+  function resetToIdle(){
+    token++;
+    clearTimers();
+    hideSet();
+    clearBadges();
+
+    hpT=MAX_HP; hpB=MAX_HP;
+    paintHP();
+
+    state="idle";
+    idleAckT=false; idleAckB=false;
+    annAckT=false; annAckB=false;
+    isSignal=false;
+    tapT=tapB=null;
+
+    end.classList.remove("on");
+    setPrompts();
+  }
+
+  // ---- input ----
+  function onTap(ev){
+    ev.preventDefault();
+    ensureAudio().catch(()=>{});
+
+    const z = ev.target.closest(".zone");
+    if(!z) return;
+    const side = z.dataset.side; // T/B
+
+    // matchover: both tap -> restart
+    if(state==="matchover"){
+      if(side==="T") rematchAckT=true; else rematchAckB=true;
+      if(rematchAckT && rematchAckB){
+        resetToIdle();
+      }
+      return;
+    }
+
+    // punish: ignore (二重ダメージ防止)
+    if(state==="punish") return;
+
+    // idle: both tap -> start announce (new target, fixed for match)
+    if(state==="idle"){
+      if(side==="T") idleAckT=true; else idleAckB=true;
+      setPrompts();
+      if(idleAckT && idleAckB){
+        idleAckT=idleAckB=false;
+
+        // 新しい固定お題を作る
+        hpT=MAX_HP; hpB=MAX_HP;
+        paintHP();
+        newTargetSet();
+
+        token++;
+        startAnnounce(token);
+      }
+      return;
+    }
+
+    // announce: both tap -> start cues
+    if(state==="announce"){
+      if(side==="T") annAckT=true; else annAckB=true;
+      setPrompts();
+      if(annAckT && annAckB){
+        clearTimers();
+        token++;
+        startCues(token);
+      }
+      return;
+    }
+
+    // cues:
+    if(state==="cues"){
+      const visible = shapeEl.classList.contains("on");
+      if(!visible) return;
+
+      if(isSignal){
+        // 正解合図：押したら勝負（NICE/BADはresolve側で決定）
+        const t = now();
+        if(side==="T"){ if(tapT==null) tapT=t; }
+        else{ if(tapB==null) tapB=t; }
+
+        state="resolve";
+        clearTimers();
+        resolveSignal(token);
+        return;
+      }else{
+        // フェイント中に押した＝お手つき：MISS/SAFE（押した側だけダメージ）
+        state="punish";
+        clearTimers();
+        hideSet();
+        addSlash();
+        flashMissSafe(side);
+        damage(side);
+        if(state==="matchover") return;
+
+        token++;
+        const myT = token;
+        // 少しだけ間を作って次へ
+        const id = setTimeout(()=>{ if(myT===token && state!=="matchover") startCues(myT); }, 520);
+        timers.push(id);
+        return;
+      }
+    }
+
+    // resolve: ignore extra taps
+  }
+
+  zones.addEventListener("pointerdown", onTap, {passive:false});
+  zones.addEventListener("touchstart", (e)=>{ e.preventDefault(); }, {passive:false});
+
+  // init
+  paintHP();
+  setPrompts();
+})();
+</script>
+</body>
+</html>
