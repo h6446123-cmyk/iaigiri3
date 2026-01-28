@@ -187,12 +187,17 @@
       color: rgba(255,255,255,.90);
       pointer-events:none;
     }
-    .endTop{ top: 20%; }
-    .endBottom{
-      bottom: 20%;
-      transform: translateX(-50%) rotate(180deg);
-      transform-origin: center;
-    }
+    .endTop{
+  top: 20%;
+  transform: translateX(-50%) rotate(180deg); /* ★上は180° */
+  transform-origin: center;
+}
+.endBottom{
+  bottom: 20%;
+  transform: translateX(-50%);              /* ★下はそのまま */
+  transform-origin: center;
+}
+
     .win{ color: var(--good); }
     .lose{ color: var(--bad); }
 
@@ -869,3 +874,4 @@
 </script>
 </body>
 </html>
+
